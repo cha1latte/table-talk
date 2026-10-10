@@ -13,6 +13,24 @@ const WHISPER_LIB = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.
 const WHISPER_MODEL = "onnx-community/whisper-base";
 const SEND_PHRASE = /^\W*(?:(?:ok(?:ay)?|o\.k\.)\W+)?(?:g\.?\s?m|gm|game ?master)\W+send(?:\s+it)?\W*$/i;
 
+const RELEASE_TAIL_MS = 600;
+
+/** A short, quiet tone when the mic is really listening. */
+function readyBeep() {
+  try {
+    const ctx = (readyBeep.ctx ??= new AudioContext());
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.12);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.13);
+  } catch {}
+}
+
 const loc = (key, data) => (data ? game.i18n.format(`TABLETALK.${key}`, data) : game.i18n.localize(`TABLETALK.${key}`));
 
 /* -------------------------------------------- */
@@ -33,50 +51,85 @@ class BrowserEngine {
   #finals = [];
   #interim = "";
   #ended = null;
+  #holding = false;
+  #opts = null;
   error = null;
 
   /** @param {object} opts
    *  @param {string} opts.lang
-   *  @param {(text: string) => void} opts.onInterim */
-  start({ lang, onInterim }) {
+   *  @param {(text: string) => void} opts.onInterim
+   *  @param {() => void} opts.onReady  called once the browser is really hearing the mic */
+  start(opts) {
+    this.#finals = [];
+    this.#interim = "";
+    this.error = null;
+    this.#holding = true;
+    this.#opts = opts;
+    this.#ready = false;
+    this.#listen();
+  }
+
+  #ready = false;
+
+  /** Some browsers (Chromium, Edge) end recognition at the first pause even in continuous mode.
+   *  While the key is still held, start a fresh one and keep adding to what was heard. */
+  #listen() {
+    const { lang, onInterim, onReady } = this.#opts;
     const rec = new BrowserEngine.Recognition();
     rec.lang = lang;
     rec.continuous = true;
     rec.interimResults = true;
     rec.maxAlternatives = 1;
-    this.#finals = [];
-    this.#interim = "";
-    this.error = null;
+    let interim = "";
     rec.onresult = event => {
-      let interim = "";
+      interim = "";
       for ( let i = event.resultIndex; i < event.results.length; i++ ) {
         const result = event.results[i];
-        if ( result.isFinal ) this.#finals.push(result[0].transcript);
+        if ( result.isFinal ) this.#finals.push(result[0].transcript.trim());
         else interim += result[0].transcript;
       }
       this.#interim = interim;
       onInterim?.([...this.#finals, interim].join(" ").trim());
     };
     rec.onerror = event => {
-      if ( event.error !== "aborted" ) this.error = event.error;
+      if ( ["aborted", "no-speech"].includes(event.error) ) return;
+      this.error = event.error;
     };
-    this.#ended = new Promise(resolve => (rec.onend = resolve));
+    rec.onaudiostart = () => {
+      if ( this.#ready ) return;
+      this.#ready = true;
+      onReady?.();
+    };
+    this.#ended = new Promise(resolve => {
+      rec.onend = () => {
+        // Words still in flight when it ended count as heard.
+        if ( interim.trim() ) this.#finals.push(interim.trim());
+        interim = "";
+        this.#interim = "";
+        if ( this.#holding && !this.error && (this.#rec === rec) ) {
+          try { this.#listen(); return; } catch {}
+        }
+        resolve();
+      };
+    });
     this.#rec = rec;
     rec.start();
   }
 
   /** @returns {Promise<string>} what was said */
   async stop() {
+    this.#holding = false;
     const rec = this.#rec;
     if ( !rec ) return "";
-    this.#rec = null;
     try { rec.stop(); } catch {}
-    // Chrome finalises the last words after stop(); give it a moment, then use what we have.
+    // The browser finalises the last words after stop(); give it a moment, then use what we have.
     await Promise.race([this.#ended, new Promise(r => setTimeout(r, 4000))]);
-    return (this.#finals.join(" ").trim() || this.#interim.trim());
+    this.#rec = null;
+    return [...this.#finals, this.#interim].join(" ").replace(/\s+/g, " ").trim();
   }
 
   cancel() {
+    this.#holding = false;
     try { this.#rec?.abort(); } catch {}
     this.#rec = null;
   }
@@ -96,20 +149,27 @@ class WhisperEngine {
   /** Load (or reuse) the transcriber. */
   static load(onProgress) {
     this.#pipeline ??= (async () => {
+      onProgress?.(0);
       const { pipeline } = await import(WHISPER_LIB);
       const webgpu = !!navigator.gpu && !!(await navigator.gpu.requestAdapter().catch(() => null));
       const files = new Map();
-      return pipeline("automatic-speech-recognition", WHISPER_MODEL, {
-        device: webgpu ? "webgpu" : "wasm",
-        dtype: webgpu ? { encoder_model: "fp32", decoder_model_merged: "q4" } : "q8",
-        progress_callback: p => {
-          if ( (p.status !== "progress") || !p.total ) return;
-          files.set(p.file, { loaded: p.loaded, total: p.total });
-          let loaded = 0, total = 0;
-          for ( const f of files.values() ) { loaded += f.loaded; total += f.total; }
-          onProgress?.(Math.floor((loaded / total) * 100));
+      const progress_callback = p => {
+        if ( (p.status !== "progress") || !p.total ) return;
+        files.set(p.file, { loaded: p.loaded, total: p.total });
+        let loaded = 0, total = 0;
+        for ( const f of files.values() ) { loaded += f.loaded; total += f.total; }
+        onProgress?.(Math.floor((loaded / total) * 100));
+      };
+      if ( webgpu ) {
+        try {
+          return await pipeline("automatic-speech-recognition", WHISPER_MODEL, {
+            device: "webgpu", dtype: { encoder_model: "fp32", decoder_model_merged: "q4" }, progress_callback
+          });
+        } catch (err) {
+          console.warn(`${ID} | WebGPU Whisper failed, using WASM`, err);
         }
-      });
+      }
+      return pipeline("automatic-speech-recognition", WHISPER_MODEL, { device: "wasm", dtype: "q8", progress_callback });
     })();
     this.#pipeline.catch(() => (this.#pipeline = null));
     return this.#pipeline;
@@ -121,7 +181,7 @@ class WhisperEngine {
   #lang = "en";
   error = null;
 
-  async start({ lang }) {
+  async start({ lang, onReady }) {
     this.error = null;
     this.#lang = (lang || "en").slice(0, 2).toLowerCase();
     this.#chunks = [];
@@ -136,6 +196,7 @@ class WhisperEngine {
     this.#recorder = new MediaRecorder(this.#stream);
     this.#recorder.ondataavailable = e => e.data.size && this.#chunks.push(e.data);
     this.#recorder.start(250);
+    onReady?.();
   }
 
   async stop({ onProgress } = {}) {
@@ -204,6 +265,29 @@ function chooseEngine() {
   return null;
 }
 
+/** Which speech-to-text this browser will use, shown in the panel so everyone can tell. */
+const engineState = { label: "" };
+
+function usingWhisper() {
+  const pref = game.settings.get(ID, "engine");
+  return (pref === "whisper") || talk.forceWhisper || ((pref === "auto") && !BrowserEngine.supported);
+}
+
+function showEngine(text) {
+  engineState.label = text;
+  panel.engine(text);
+}
+
+/** Start the one-time Whisper download straight away, with progress, instead of on first use. */
+function preloadWhisper() {
+  if ( !usingWhisper() ) return showEngine(loc("EngineBrowser"));
+  if ( !WhisperEngine.supported ) return showEngine(loc("NoEngine"));
+  showEngine(loc("EngineWhisperLoading", { pct: 0 }));
+  WhisperEngine.load(pct => showEngine(loc("EngineWhisperLoading", { pct })))
+    .then(() => showEngine(loc("EngineWhisperReady")))
+    .catch(err => showEngine(loc("ModelFailed", { error: err.message })));
+}
+
 function speechLang() {
   return game.settings.get(ID, "language").trim() || navigator.language || "en-US";
 }
@@ -215,11 +299,17 @@ async function startTalking() {
   if ( !engine ) return panel.status(loc("NoEngine"), "error");
   talk.engine = engine;
   talk.active = true;
-  panel.talking(true);
-  panel.status(loc("Listening"), "live");
+  panel.status(loc("Starting"), "busy");
   window.addEventListener("keyup", onRawKeyUp, true);
   window.addEventListener("blur", stopTalking, { once: true });
-  await engine.start({ lang: speechLang(), onInterim: text => text && panel.status(text, "live") });
+  // The mic takes a moment to open; words spoken before then are lost, so say when it's really on.
+  const onReady = () => {
+    if ( !talk.active || (talk.engine !== engine) ) return;
+    panel.talking(true);
+    panel.status(loc("Listening"), "live");
+    readyBeep();
+  };
+  await engine.start({ lang: speechLang(), onReady, onInterim: text => text && panel.status(text, "live") });
   if ( engine.error ) {
     talk.active = false;
     panel.talking(false);
@@ -238,6 +328,8 @@ async function stopTalking() {
   if ( !talk.active ) return;
   talk.active = false;
   talk.busy = true;
+  // Keep listening a moment after the key comes up so the last word isn't clipped.
+  await new Promise(r => setTimeout(r, RELEASE_TAIL_MS));
   panel.talking(false);
   const engine = talk.engine;
   panel.status(loc("Transcribing"), "busy");
@@ -265,9 +357,7 @@ function handleEngineError(error) {
   if ( serviceMissing && game.settings.get(ID, "engine") === "auto" && !talk.forceWhisper && WhisperEngine.supported ) {
     talk.forceWhisper = true;
     panel.status(loc("SwitchingEngine"), "warn");
-    WhisperEngine.load(pct => panel.status(loc("ModelLoading", { pct }), "busy"))
-      .then(() => panel.status(loc("ModelReady"), "ok"))
-      .catch(err => panel.status(loc("ModelFailed", { error: err.message }), "error"));
+    preloadWhisper();
     return;
   }
   panel.status(loc("EngineError", { error }), "error");
@@ -335,7 +425,16 @@ const queue = {
   changed() {
     this.save();
     panel.render();
-    game.socket.emit(SOCKET, { type: "queue", count: this.lines.length });
+    this.broadcast();
+  },
+
+  /** Everyone learns how many lines wait; each player picks out their own to show (and delete). */
+  broadcast() {
+    game.socket.emit(SOCKET, {
+      type: "queue",
+      count: this.lines.length,
+      lines: this.lines.map(({ id, userId, text }) => ({ id, userId, text }))
+    });
   },
 
   async send() {
@@ -371,24 +470,36 @@ const queue = {
   }
 };
 
-function onSocket(message) {
+function onSocket(message, senderId) {
   switch ( message?.type ) {
     case "line":
       if ( queue.isOwner ) queue.add(message.line);
       break;
+    case "remove": {
+      // A player takes back one of their own lines before the GM sends it.
+      if ( !queue.isOwner ) break;
+      const line = queue.lines.find(l => l.id === message.id);
+      const from = senderId ?? message.userId;
+      if ( line && (line.userId === from) ) queue.remove(line.id);
+      break;
+    }
     case "queue":
-      if ( !queue.isOwner ) panel.waiting(message.count);
+      if ( !queue.isOwner ) {
+        panel.mine((message.lines ?? []).filter(l => l.userId === game.user.id));
+        panel.waiting(message.count);
+      }
       break;
     case "sent":
       if ( !queue.isOwner ) {
         talk.lastLine = null;
+        panel.mine([]);
         panel.waiting(0);
         panel.status(loc("SentToGM"), "ok");
       }
       break;
     case "hello":
       // Someone (re)loaded; tell them how many lines are waiting.
-      if ( queue.isOwner ) game.socket.emit(SOCKET, { type: "queue", count: queue.lines.length });
+      if ( queue.isOwner ) queue.broadcast();
       break;
   }
 }
@@ -433,6 +544,29 @@ const link = {
 const panel = {
   el: null,
   waitingCount: 0,
+  myLines: [],
+
+  /** A player's own lines still waiting for the GM, each with a button to take it back. */
+  mine(lines) {
+    this.myLines = lines;
+    if ( !this.el ) return;
+    const list = this.el.querySelector(".tt-mine");
+    list.hidden = queue.isOwner || !lines.length;
+    list.replaceChildren(...lines.map(line => {
+      const li = document.createElement("li");
+      const text = document.createElement("span");
+      text.textContent = line.text;
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "tt-remove";
+      remove.dataset.retract = line.id;
+      remove.dataset.tooltip = loc("Retract");
+      remove.setAttribute("aria-label", loc("Retract"));
+      remove.innerHTML = `<i class="fa-solid fa-xmark" inert></i>`;
+      li.append(text, remove);
+      return li;
+    }));
+  },
 
   create() {
     const el = document.createElement("section");
@@ -445,7 +579,13 @@ const panel = {
         </button>
         <span class="tt-link" hidden></span>
       </div>
+      <form class="tt-type">
+        <input type="text" name="line" maxlength="2000" autocomplete="off">
+        <button type="submit" class="tt-type-send"><i class="fa-solid fa-arrow-right" inert></i></button>
+      </form>
       <p class="tt-status" role="status" aria-live="polite"></p>
+      <p class="tt-engine"></p>
+      <ol class="tt-mine" hidden></ol>
       <div class="tt-gm" hidden>
         <header class="tt-queue-head"><span class="tt-queue-title"></span></header>
         <ol class="tt-queue"></ol>
@@ -463,6 +603,24 @@ const panel = {
       talkButton.addEventListener(type, () => stopTalking());
     }
     el.querySelector(".tt-send").addEventListener("click", () => queue.send());
+    const typeForm = el.querySelector(".tt-type");
+    const typeInput = typeForm.querySelector("input");
+    typeInput.placeholder = loc("TypePlaceholder");
+    typeForm.querySelector("button").setAttribute("aria-label", loc("TypeSend"));
+    typeForm.addEventListener("submit", event => {
+      event.preventDefault();
+      const text = typeInput.value.replace(/\s+/g, " ").trim();
+      if ( !text ) return;
+      typeInput.value = "";
+      submitLine(text);
+    });
+    el.querySelector(".tt-mine").addEventListener("click", event => {
+      const id = event.target.closest("[data-retract]")?.dataset.retract;
+      if ( !id ) return;
+      game.socket.emit(SOCKET, { type: "remove", id, userId: game.user.id });
+      this.mine(this.myLines.filter(l => l.id !== id));
+      if ( !this.myLines.length ) talk.lastLine = null;
+    });
     el.querySelector(".tt-queue").addEventListener("click", event => {
       const id = event.target.closest("[data-remove]")?.dataset.remove;
       if ( id ) queue.remove(id);
@@ -533,6 +691,11 @@ const panel = {
     this.el.querySelector(".tt-send").disabled = !queue.lines.length;
   },
 
+  engine(text) {
+    const p = this.el?.querySelector(".tt-engine");
+    if ( p ) p.textContent = text;
+  },
+
   status(text, kind = "") {
     if ( !this.el ) return;
     const p = this.el.querySelector(".tt-status");
@@ -555,9 +718,7 @@ const panel = {
   waiting(count) {
     this.waitingCount = count;
     if ( !this.el || talk.active || talk.busy || !count ) return;
-    const waiting = loc("Waiting", { count });
-    this.status(talk.lastLine ? `${loc("Queued", { text: talk.lastLine })}
-${waiting}` : waiting, "ok");
+    this.status(loc("Waiting", { count }), "ok");
   }
 };
 
@@ -587,7 +748,10 @@ Hooks.once("init", () => {
       whisper: "TABLETALK.Settings.Engine.Whisper"
     },
     default: "auto",
-    onChange: () => (talk.forceWhisper = false)
+    onChange: () => {
+      talk.forceWhisper = false;
+      preloadWhisper();
+    }
   });
   game.settings.register(ID, "language", {
     name: "TABLETALK.Settings.Language.Name",
@@ -638,5 +802,5 @@ Hooks.once("ready", () => {
     panel.render();
     panel.place();
   });
-  if ( game.settings.get(ID, "engine") === "whisper" ) WhisperEngine.load().catch(() => {});
+  preloadWhisper();
 });

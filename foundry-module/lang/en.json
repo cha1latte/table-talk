@@ -2,10 +2,11 @@
   "TABLETALK": {
     "Title": "Table Talk",
     "HoldToTalk": "Hold {key} to talk to the GM",
-    "Listening": "Listening… let go when you're done",
+    "Starting": "Opening the mic… start talking at the beep",
+    "Listening": "Listening… keep holding, let go when you're done",
     "Transcribing": "Writing down what you said…",
     "Queued": "Waiting for the GM to send: \"{text}\"",
-    "NothingHeard": "Didn't catch anything. Hold {key} a moment before you start talking.",
+    "NothingHeard": "Didn't catch anything. Wait for the beep before you start talking.",
     "NoGM": "No GM is connected, so nothing was saved.",
     "Waiting": "{count} waiting for the GM to send",
     "SentToGM": "The GM sent the table's turn.",
@@ -59,6 +60,12 @@
         "Name": "Send the queue (GM)",
         "Hint": "Sends every waiting line to the Claude Code game master."
       }
-    }
+    },
+    "TypePlaceholder": "Or type to the GM, then Enter",
+    "TypeSend": "Add to the GM's queue",
+    "Retract": "Take this line back",
+    "EngineBrowser": "Speech: browser's own recognition",
+    "EngineWhisperLoading": "Speech: Whisper, downloading the model ({pct}%)… one time only",
+    "EngineWhisperReady": "Speech: Whisper, ready"
   }
 }

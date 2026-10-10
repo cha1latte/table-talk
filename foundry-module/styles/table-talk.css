@@ -129,3 +129,30 @@
   font-style: italic;
   border-bottom: none;
 }
+
+#table-talk .tt-type {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+#table-talk .tt-type input { flex: 1; min-width: 0; height: 30px; }
+#table-talk .tt-type button { flex: none; width: 30px; height: 30px; min-height: 0; margin: 0; padding: 0; }
+
+#table-talk .tt-mine {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+#table-talk .tt-mine li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+  align-items: center;
+  padding: 3px 2px;
+  border-top: 1px solid var(--tt-border);
+}
+#table-talk .tt-mine li span { overflow-wrap: anywhere; }
+#table-talk .tt-mine .tt-remove { width: 24px; height: 24px; min-height: 0; margin: 0; padding: 0; line-height: 1; }
+
+#table-talk .tt-engine { margin: 4px 2px 0; color: var(--tt-muted); font-size: var(--font-size-11, 11px); }
+#table-talk .tt-engine:empty { display: none; }

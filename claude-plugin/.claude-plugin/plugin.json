@@ -1,7 +1,7 @@
 {
   "name": "table-talk",
   "description": "Players hold a key in Foundry VTT and talk; their words reach your Claude Code game master, labelled with their characters, when the GM presses Send. A channel for Familiar tables.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": { "name": "cha1latte" },
   "license": "MIT",
   "keywords": ["foundry", "familiar", "ttrpg", "voice", "push-to-talk", "channel", "mcp"]
