@@ -246,7 +246,7 @@ const talk = {
   engine: null,      // the engine in use for this press
   active: false,
   busy: false,       // transcribing the previous press
-  lastLine: null,    // this player's latest line still waiting for the GM
+  lastLineId: null,  // id of this player's latest line still waiting for the GM (its text is in the status line)
   forceWhisper: false
 };
 
@@ -382,7 +382,7 @@ function submitLine(text) {
     return;
   }
   if ( !game.users.activeGM ) return panel.status(loc("NoGM"), "error");
-  talk.lastLine = text;
+  talk.lastLineId = line.id;
   game.socket.emit(SOCKET, { type: "line", line });
   panel.status(loc("Queued", { text }), "ok");
 }
@@ -456,8 +456,9 @@ const queue = {
       if ( !res.ok ) throw new Error(body.reason ?? `HTTP ${res.status}`);
       const sentIds = new Set(batch.map(l => l.id));
       this.lines = this.lines.filter(l => !sentIds.has(l.id));
-      this.changed();
+      // "sent" goes out before the new queue, so players read it as sent, not as removed.
       game.socket.emit(SOCKET, { type: "sent", count: batch.length });
+      this.changed();
       panel.status(loc("Sent", { count: batch.length }), "ok");
       link.set("ok");
     } catch (err) {
@@ -485,13 +486,19 @@ function onSocket(message, senderId) {
     }
     case "queue":
       if ( !queue.isOwner ) {
-        panel.mine((message.lines ?? []).filter(l => l.userId === game.user.id));
+        const mine = (message.lines ?? []).filter(l => l.userId === game.user.id);
+        panel.mine(mine);
+        // The GM removed the line the status line still quotes.
+        if ( talk.lastLineId && !mine.some(l => l.id === talk.lastLineId) ) {
+          talk.lastLineId = null;
+          if ( !talk.active && !talk.busy ) panel.status(loc("RemovedByGM"), "warn");
+        }
         panel.waiting(message.count);
       }
       break;
     case "sent":
       if ( !queue.isOwner ) {
-        talk.lastLine = null;
+        talk.lastLineId = null;
         panel.mine([]);
         panel.waiting(0);
         panel.status(loc("SentToGM"), "ok");
@@ -619,7 +626,10 @@ const panel = {
       if ( !id ) return;
       game.socket.emit(SOCKET, { type: "remove", id, userId: game.user.id });
       this.mine(this.myLines.filter(l => l.id !== id));
-      if ( !this.myLines.length ) talk.lastLine = null;
+      if ( id === talk.lastLineId ) {
+        talk.lastLineId = null;
+        this.status(this.myLines.length ? loc("Waiting", { count: this.myLines.length }) : loc("Retracted"), "ok");
+      }
     });
     el.querySelector(".tt-queue").addEventListener("click", event => {
       const id = event.target.closest("[data-remove]")?.dataset.remove;
@@ -717,8 +727,18 @@ const panel = {
 
   waiting(count) {
     this.waitingCount = count;
-    if ( !this.el || talk.active || talk.busy || !count ) return;
-    this.status(loc("Waiting", { count }), "ok");
+    if ( !this.el || talk.active || talk.busy ) return;
+    const p = this.el.querySelector(".tt-status");
+    if ( count ) {
+      // Keep warnings and errors (such as "the GM took your line out") on screen.
+      if ( ["warn", "error"].includes(p.dataset.kind) ) return;
+      this.status(loc("Waiting", { count }), "ok");
+      this.waitingText = p.textContent;
+    } else {
+      // Only clear a count that is now out of date, never another message.
+      if ( p.textContent === this.waitingText ) this.status("");
+      this.waitingText = null;
+    }
   }
 };
 

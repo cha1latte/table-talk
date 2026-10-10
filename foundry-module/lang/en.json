@@ -10,6 +10,8 @@
     "NoGM": "No GM is connected, so nothing was saved.",
     "Waiting": "{count} waiting for the GM to send",
     "SentToGM": "The GM sent the table's turn.",
+    "RemovedByGM": "The GM took your line out before sending it.",
+    "Retracted": "Line taken back.",
     "Insecure": "Voice needs a secure page (https or localhost). Ask your GM to open Foundry over https.",
     "MicBlocked": "Your browser blocked the microphone. Allow it for this page (the icon in the address bar), then try again.",
     "NoEngine": "This browser can't turn speech into text. Try Chrome or Edge.",

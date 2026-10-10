@@ -46,6 +46,17 @@ try {
   q = await gmQueue(gm)
   check('player can take their line back', q.length === 0, JSON.stringify(q))
   check('their list empties', (await pl.locator('#table-talk .tt-mine li').count()) === 0)
+  const plStatus = () => pl.locator('#table-talk .tt-status').innerText()
+  check('their status no longer quotes the line', !/snacks/.test(await plStatus()), await plStatus())
+
+  // The GM removes a player's line (reported by Shlo, 2026-10-10: it stayed on the player's screen).
+  await pl.fill('#table-talk .tt-type input', 'I lick the strange mushroom.')
+  await pl.press('#table-talk .tt-type input', 'Enter')
+  await pl.waitForTimeout(1500)
+  await gm.click('#table-talk .tt-queue .tt-remove')
+  await pl.waitForTimeout(1500)
+  check('GM removal empties the player list', (await pl.locator('#table-talk .tt-mine li').count()) === 0)
+  check('GM removal: status says so, not the old line', /took your line out/.test(await plStatus()) && !/mushroom/.test(await plStatus()), await plStatus())
 
   await gm.fill('#table-talk .tt-type input', 'GM note typed')
   await gm.press('#table-talk .tt-type input', 'Enter')
