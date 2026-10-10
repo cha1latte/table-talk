@@ -1,0 +1,16 @@
+{
+  "name": "table-talk",
+  "owner": {
+    "name": "cha1latte"
+  },
+  "metadata": {
+    "description": "Table Talk: push-to-talk from Foundry VTT into a Claude Code game master."
+  },
+  "plugins": [
+    {
+      "name": "table-talk",
+      "source": "./claude-plugin",
+      "description": "Push-to-talk from Foundry VTT into your Claude Code game master (a channel for Familiar tables)."
+    }
+  ]
+}

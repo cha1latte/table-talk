@@ -1,0 +1,16 @@
+{
+  "id": "table-talk",
+  "title": "Table Talk",
+  "description": "Hold a key and talk: each player's words are transcribed in their own browser, labelled with their character and queued for the GM, who sends the table's turn to a Claude Code game master (Familiar + the Table Talk channel). Nothing to install for players.",
+  "version": "0.1.0",
+  "authors": [{ "name": "cha1latte" }],
+  "compatibility": { "minimum": "13", "verified": "14" },
+  "esmodules": ["scripts/table-talk.mjs"],
+  "styles": ["styles/table-talk.css"],
+  "languages": [{ "lang": "en", "name": "English", "path": "lang/en.json" }],
+  "socket": true,
+  "url": "https://github.com/cha1latte/table-talk",
+  "manifest": "https://github.com/cha1latte/table-talk/releases/latest/download/module.json",
+  "download": "https://github.com/cha1latte/table-talk/releases/latest/download/table-talk.zip",
+  "license": "MIT"
+}

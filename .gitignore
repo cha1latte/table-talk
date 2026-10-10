@@ -1,0 +1,4 @@
+.qa-foundry/
+qa/out/
+node_modules/
+dist/

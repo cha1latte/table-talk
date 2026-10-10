@@ -1,0 +1,131 @@
+/* Table Talk panel: bottom left, above the players list. Uses Foundry's own theme variables so it
+   follows the light and dark interface themes. */
+#table-talk {
+  --tt-bg: var(--color-cool-5-90, rgba(11, 10, 19, 0.9));
+  --tt-border: var(--color-cool-4, #302831);
+  --tt-text: var(--color-light-1, #f0f0e0);
+  --tt-muted: var(--color-light-4, #a5a39b);
+  --tt-accent: var(--color-warm-2, #ee9b3a);
+  --tt-live: #e5484d;
+  --tt-ok: #46a758;
+  position: fixed;
+  left: 15px;
+  bottom: 120px;
+  z-index: 70;
+  width: 300px;
+  max-width: calc(100vw - 30px);
+  padding: 8px;
+  border: 1px solid var(--tt-border);
+  border-radius: 8px;
+  background: var(--tt-bg);
+  color: var(--tt-text);
+  font-size: var(--font-size-13, 13px);
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+  pointer-events: all;
+}
+
+#table-talk .tt-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#table-talk .tt-talk,
+#table-talk .tt-send {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  margin: 0;
+  touch-action: none;
+  user-select: none;
+}
+
+#table-talk.talking .tt-talk {
+  border-color: var(--tt-live);
+  box-shadow: 0 0 0 2px var(--tt-live) inset;
+}
+
+#table-talk.talking .tt-talk i {
+  color: var(--tt-live);
+  animation: tt-pulse 1s ease-in-out infinite;
+}
+
+@keyframes tt-pulse {
+  50% { opacity: 0.35; }
+}
+
+#table-talk .tt-link {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--tt-muted);
+}
+#table-talk .tt-link[data-state="ok"] { background: var(--tt-ok); }
+#table-talk .tt-link[data-state="down"],
+#table-talk .tt-link[data-state="refused"] { background: var(--tt-live); }
+
+#table-talk .tt-status {
+  margin: 6px 2px 0;
+  white-space: pre-line;
+  color: var(--tt-muted);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+#table-talk .tt-status:empty { display: none; }
+#table-talk .tt-status[data-kind="live"] { color: var(--tt-text); font-style: italic; }
+#table-talk .tt-status[data-kind="ok"] { color: var(--tt-text); }
+#table-talk .tt-status[data-kind="warn"] { color: var(--tt-accent); }
+#table-talk .tt-status[data-kind="error"] { color: #ff8a8a; }
+
+#table-talk .tt-send { width: 100%; }
+
+#table-talk .tt-gm {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--tt-border);
+}
+
+#table-talk .tt-queue-head {
+  margin-bottom: 4px;
+  color: var(--tt-muted);
+  font-weight: bold;
+}
+
+#table-talk .tt-queue {
+  max-height: 180px;
+  margin: 0 0 8px;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+#table-talk .tt-queue li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0 6px;
+  padding: 4px 2px;
+  border-bottom: 1px solid var(--tt-border);
+}
+#table-talk .tt-queue li strong { grid-column: 1; color: var(--tt-accent); }
+#table-talk .tt-queue li span { grid-column: 1; overflow-wrap: anywhere; }
+#table-talk .tt-queue li .tt-remove {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  width: 24px;
+  height: 24px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  line-height: 1;
+}
+#table-talk .tt-queue li.tt-empty {
+  display: block;
+  color: var(--tt-muted);
+  font-style: italic;
+  border-bottom: none;
+}

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "table-talk": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/server.mjs"]
+    }
+  }
+}

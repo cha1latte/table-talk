@@ -1,0 +1,13 @@
+{
+  "name": "table-talk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Push-to-talk from Foundry VTT into a Claude Code game master (Familiar tables).",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "test": "node qa/test-server.mjs && node qa/test-idle.mjs",
+    "e2e": "node qa/e2e.mjs",
+    "package": "node tools/package.mjs"
+  }
+}

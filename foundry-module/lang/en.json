@@ -1,0 +1,64 @@
+{
+  "TABLETALK": {
+    "Title": "Table Talk",
+    "HoldToTalk": "Hold {key} to talk to the GM",
+    "Listening": "Listening… let go when you're done",
+    "Transcribing": "Writing down what you said…",
+    "Queued": "Waiting for the GM to send: \"{text}\"",
+    "NothingHeard": "Didn't catch anything. Hold {key} a moment before you start talking.",
+    "NoGM": "No GM is connected, so nothing was saved.",
+    "Waiting": "{count} waiting for the GM to send",
+    "SentToGM": "The GM sent the table's turn.",
+    "Insecure": "Voice needs a secure page (https or localhost). Ask your GM to open Foundry over https.",
+    "MicBlocked": "Your browser blocked the microphone. Allow it for this page (the icon in the address bar), then try again.",
+    "NoEngine": "This browser can't turn speech into text. Try Chrome or Edge.",
+    "SwitchingEngine": "Your browser's speech service isn't available here; switching to the built-in model.",
+    "ModelLoading": "Getting the speech model ready (one-time download, {pct}%)…",
+    "ModelReady": "Speech model ready.",
+    "ModelFailed": "The speech model couldn't load: {error}",
+    "EngineError": "Speech-to-text stopped: {error}",
+    "Queue": "Waiting to send",
+    "QueueEmpty": "Nothing yet. Lines appear here as players talk.",
+    "Remove": "Remove this line",
+    "Send": "Send to the AI GM",
+    "SendKey": "({key})",
+    "Sending": "Sending…",
+    "Sent": "Sent {count} to Claude Code.",
+    "NothingToSend": "Nothing to send yet.",
+    "Linked": "Claude Code is listening",
+    "NotLinked": "Claude Code isn't listening at {url}. Start it with Table Talk (see the module's readme).",
+    "Refused": "Claude Code refused this page. In Claude Code, ask: Allow Table Talk for {origin}",
+    "SendFailed": "Couldn't send: {error}",
+    "Settings": {
+      "ChannelUrl": {
+        "Name": "Claude Code address (GM)",
+        "Hint": "Where the Table Talk channel listens on the GM's computer. Only change this if you changed TABLE_TALK_PORT."
+      },
+      "Engine": {
+        "Name": "Speech-to-text",
+        "Hint": "Automatic uses your browser's built-in recognition and switches to a model that runs inside the browser (one-time download) when that isn't available, for example in Firefox or the Foundry desktop app.",
+        "Auto": "Automatic",
+        "Browser": "Browser's built-in recognition",
+        "Whisper": "Whisper inside the browser (one-time download)"
+      },
+      "Language": {
+        "Name": "Spoken language",
+        "Hint": "A language tag such as en-US or de-DE. Leave blank to use your browser's language."
+      },
+      "SpokenSend": {
+        "Name": "\"OK GM, send it\"",
+        "Hint": "Let the GM send the queue by saying \"OK GM, send it\" while holding the talk key."
+      }
+    },
+    "Keys": {
+      "Talk": {
+        "Name": "Hold to talk",
+        "Hint": "Hold while you speak; let go when you're done. Your words go to the GM's queue."
+      },
+      "Send": {
+        "Name": "Send the queue (GM)",
+        "Hint": "Sends every waiting line to the Claude Code game master."
+      }
+    }
+  }
+}
