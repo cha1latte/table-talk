@@ -86,6 +86,28 @@ try {
   check('Claude receives the exact words, labelled by character', note.params.content === expected, JSON.stringify(note.params.content))
   check('meta carries line count and world', note.params.meta.lines === '2' && note.params.meta.world === 'the-long-rest', JSON.stringify(note.params.meta))
 
+  // Foundry chat and rolls join spoken lines; each line then says how it got there.
+  const mixed = [
+    { character: 'Big Elf', player: 'Shlo', text: 'I kick it.', via: 'voice' },
+    { character: 'Gizmo', player: 'Techie', text: 'Nobody moves.', via: 'ic' },
+    { character: 'Gizmo', player: 'Techie', text: 'Perception Check: 1d20 + 5 = 17', via: 'roll' },
+    { character: 'Gizmo', player: 'Techie', text: 'I pocket the key.', via: 'chat', whisper: true },
+    { character: 'Big Elf', player: 'Shlo', text: 'odd source', via: 'hax' },
+  ]
+  await post({ lines: mixed }, 'http://localhost:30000')
+  const notes = () => inbox.filter(m => m.method === 'notifications/claude/channel')
+  for (let i = 0; i < 100 && notes().length < 2; i++) await sleep(30)
+  const expectedMixed = [
+    'From the table (5 lines):',
+    'Big Elf (Shlo) [spoken]: "I kick it."',
+    'Gizmo (Techie) [chat, in character]: "Nobody moves."',
+    'Gizmo (Techie) [roll]: "Perception Check: 1d20 + 5 = 17"',
+    'Gizmo (Techie) [chat, whispered to the GM]: "I pocket the key."',
+    'Big Elf (Shlo) [spoken]: "odd source"',
+  ].join('\n')
+  check('mixed batches tag each line (unknown sources count as spoken)', notes()[1]?.params.content === expectedMixed, JSON.stringify(notes()[1]?.params.content))
+  check('instructions explain the tags', /\[roll\]/.test(init.result?.instructions ?? '') && /whispered to the GM/.test(init.result?.instructions ?? ''))
+
   const r2 = await post({ lines }, 'https://evil.example')
   const j2 = await r2.json()
   check('a page the GM never allowed is refused', r2.status === 403 && j2.fix === 'Allow Table Talk for https://evil.example', JSON.stringify(j2))
@@ -100,7 +122,7 @@ try {
   check('empty batches are refused', (await post({ lines: [] }, 'http://localhost:30000')).status === 400)
   check('all-blank batches are refused', (await post({ lines: [lines[2]] }, 'http://localhost:30000')).status === 400)
   const before = inbox.filter(m => m.method === 'notifications/claude/channel').length
-  check('only accepted batches reach Claude', before === 2, String(before))
+  check('only accepted batches reach Claude', before === 3, String(before))
 } catch (err) {
   check('run', false, err.stack)
 } finally {

@@ -40,6 +40,7 @@ When the dot next to *Hold G to talk* on the GM's screen turns **green**, you're
 - **Players:** hold **G** (or hold the microphone button) and talk. Let go when you're done. You'll see your words, then *"Waiting for the GM to send"*.
 - **GM:** lines pile up in the *Waiting to send* list with each character's name. Remove anything you don't want with the ✕. Press **Send to the AI GM**, press **Shift+G**, or hold G and say *"OK GM, send it."* The AI GM answers the whole table at once.
 - Lines spoken while the AI GM is still answering simply wait for the next Send.
+- **Foundry chat counts too.** Players' chat messages, emotes, whispers to the GM and rolls join the same list, so Claude sees what people type in Foundry, not just what they say. Rolls arrive with their result (`Perception: 1d20 + 5 = 17`) so the AI GM uses them instead of rolling again. Whispers between players, private rolls and the GM's own messages are never sent. Set *Players' Foundry chat* to **Send it straight away** if you'd rather not press Send for chat at all (spoken lines still wait for you), or **Don't add it** to turn this off. It pauses itself while Familiar's own Table Chat is on, so nothing gets answered twice.
 - The keys can be changed in *Configure Controls*.
 
 ## Things to know
@@ -52,7 +53,7 @@ When the dot next to *Hold G to talk* on the GM's screen turns **green**, you're
   - Firefox, the Foundry desktop app and anything else without it switch automatically to **Whisper running inside the browser**: a one-time download (about 80 MB), after which audio never leaves the player's computer. Anyone can choose Whisper in *Configure Settings → Table Talk*.
 - **Nobody shares a Claude login.** The GM's Claude Code uses the GM's own account. Players need no Anthropic account at all.
 - **About the warning screen.** Custom Claude Code channels are a research preview, and only channels Anthropic has approved start without `--dangerously-load-development-channels`. Until Table Talk is approved, that flag and one click each launch are the price. The warning also says not to run downloaded channels: only do this with code you trust. The whole channel is one small file with no dependencies, [claude-plugin/server.mjs](claude-plugin/server.mjs), so you can read it first. It only accepts lines from Foundry pages on your own computer or addresses you've allowed, and it tells Claude to treat them as player speech, never as instructions to run commands or edit files.
-- **Settings** (*Configure Settings → Table Talk*): speech engine, spoken language, the GM's Claude Code address, and whether "OK GM, send it" works.
+- **Settings** (*Configure Settings → Table Talk*): speech engine, spoken language, the GM's Claude Code address, whether "OK GM, send it" works, and what happens to players' Foundry chat.
 
 ## Troubleshooting
 

@@ -5,6 +5,7 @@
  * labels it with their assigned character and hands it to the GM's client over the module socket.
  * The GM's client keeps the queue; when the GM sends it, the lines go to the Table Talk channel
  * running inside the GM's Claude Code session (http://127.0.0.1:8796 by default).
+ * Players' Foundry chat messages and rolls can join the same queue, so the AI GM sees them too.
  */
 
 const ID = "table-talk";
@@ -14,6 +15,7 @@ const WHISPER_MODEL = "onnx-community/whisper-base";
 const SEND_PHRASE = /^\W*(?:(?:ok(?:ay)?|o\.k\.)\W+)?(?:g\.?\s?m|gm|game ?master)\W+send(?:\s+it)?\W*$/i;
 
 const RELEASE_TAIL_MS = 600;
+const CHAT_SEND_DELAY_MS = 1500;
 
 /** A short, quiet tone when the mic is really listening. */
 function readyBeep() {
@@ -346,7 +348,7 @@ async function stopTalking() {
   }
   if ( engine.error ) return handleEngineError(engine.error);
   if ( !text ) return panel.status(loc("NothingHeard", { key: talkKeyLabel() }), "warn");
-  submitLine(text);
+  submitLine(text, "voice");
 }
 
 function handleEngineError(error) {
@@ -367,15 +369,16 @@ function handleEngineError(error) {
 /*  Lines and the GM's queue                    */
 /* -------------------------------------------- */
 
-function makeLine(text) {
+/** @param {"voice"|"typed"} via  spoken while holding the key, or typed in the panel */
+function makeLine(text, via) {
   const user = game.user;
   const character = user.isGM ? "GM" : (user.character?.name ?? user.name);
-  return { id: foundry.utils.randomID(), userId: user.id, player: user.name, character, text, at: Date.now() };
+  return { id: foundry.utils.randomID(), userId: user.id, player: user.name, character, text, via, at: Date.now() };
 }
 
-function submitLine(text) {
-  if ( game.user.isGM && SEND_PHRASE.test(text) && game.settings.get(ID, "spokenSend") ) return queue.send();
-  const line = makeLine(text);
+function submitLine(text, via) {
+  if ( game.user.isGM && (via === "voice") && SEND_PHRASE.test(text) && game.settings.get(ID, "spokenSend") ) return queue.send();
+  const line = makeLine(text, via);
   if ( queue.isOwner ) {
     queue.add(line);
     panel.status(loc("Queued", { text }), "ok");
@@ -437,10 +440,16 @@ const queue = {
     });
   },
 
-  async send() {
-    if ( !this.isOwner ) return;
-    if ( !this.lines.length ) return panel.status(loc("NothingToSend"), "warn");
-    const batch = this.lines.slice();
+  sending: false,
+
+  /** @param {object} [options]
+   *  @param {(line: object) => boolean} [options.only]  send just these lines (the rest keep waiting)
+   *  @param {boolean} [options.quiet]                    say nothing when there is nothing to send */
+  async send({ only = () => true, quiet = false } = {}) {
+    if ( !this.isOwner || this.sending ) return;
+    const batch = this.lines.filter(only);
+    if ( !batch.length ) return quiet ? undefined : panel.status(loc("NothingToSend"), "warn");
+    this.sending = true;
     panel.sending(true);
     try {
       const res = await fetch(`${channelUrl()}/batch`, {
@@ -448,7 +457,7 @@ const queue = {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           world: game.world.id,
-          lines: batch.map(({ character, player, text }) => ({ character, player, text }))
+          lines: batch.map(({ character, player, text, via, whisper }) => ({ character, player, text, via, whisper }))
         })
       });
       const body = await res.json().catch(() => ({}));
@@ -457,7 +466,7 @@ const queue = {
       const sentIds = new Set(batch.map(l => l.id));
       this.lines = this.lines.filter(l => !sentIds.has(l.id));
       // "sent" goes out before the new queue, so players read it as sent, not as removed.
-      game.socket.emit(SOCKET, { type: "sent", count: batch.length });
+      game.socket.emit(SOCKET, { type: "sent", count: batch.length, userIds: [...new Set(batch.map(l => l.userId))] });
       this.changed();
       panel.status(loc("Sent", { count: batch.length }), "ok");
       link.set("ok");
@@ -466,6 +475,7 @@ const queue = {
       if ( unreachable ) link.set("down");
       panel.status(unreachable ? loc("NotLinked", { url: channelUrl() }) : loc("SendFailed", { error: err.message }), "error");
     } finally {
+      this.sending = false;
       panel.sending(false);
     }
   }
@@ -497,7 +507,8 @@ function onSocket(message, senderId) {
       }
       break;
     case "sent":
-      if ( !queue.isOwner ) {
+      // Only players who had a line in that batch (an older GM client doesn't say who: everyone).
+      if ( !queue.isOwner && (!message.userIds || message.userIds.includes(game.user.id)) ) {
         talk.lastLineId = null;
         panel.mine([]);
         panel.waiting(0);
@@ -510,6 +521,84 @@ function onSocket(message, senderId) {
       break;
   }
 }
+
+/* -------------------------------------------- */
+/*  Foundry chat                                */
+/* -------------------------------------------- */
+
+/** Visible text of a chat message's HTML, without running or loading anything in it. */
+function plainText(html) {
+  if ( !html ) return "";
+  const doc = new DOMParser().parseFromString(String(html), "text/html");
+  doc.querySelectorAll("br, p, div, li").forEach(el => el.append(" "));
+  return (doc.body.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 2000);
+}
+
+const chat = {
+  timer: null,
+
+  get mode() {
+    return game.settings.get(ID, "chat");
+  },
+
+  /** Familiar's own Table Chat answers players in chat; forwarding as well would get two answers. */
+  get familiarAnswers() {
+    try { return game.settings.get("familiar", "tableChatEnabled") === true; } catch { return false; }
+  },
+
+  /**
+   * A player's chat message or roll as a queue line, or null when the AI GM shouldn't get it:
+   * the GM's own posts (Claude's narration arrives as those), Familiar's cards and buttons,
+   * whispers between players, private rolls, and system cards such as "uses Longsword"
+   * (the attack or damage roll that follows carries the result).
+   */
+  line(message) {
+    const author = message.author;
+    if ( !author || author.isGM ) return null;
+    if ( !foundry.utils.isEmpty(message.flags?.familiar ?? {}) ) return null;
+    const whisper = message.whisper ?? [];
+    if ( whisper.length && !whisper.some(id => game.users.get(id)?.isGM) ) return null;
+    const styles = CONST.CHAT_MESSAGE_STYLES;
+    let via, text;
+    if ( message.isRoll ) {
+      via = "roll";
+      const results = message.rolls.map(r => `${r.formula} = ${r.total}`).join("; ");
+      const flavor = plainText(message.flavor);
+      text = flavor ? `${flavor}: ${results}` : results;
+    } else {
+      if ( !foundry.utils.isEmpty(message.flags?.[game.system.id] ?? {}) ) return null;
+      // Plain chat is OOC unless the player switched Foundry's chat mode to in-character, so OOC
+      // just means "no speaking token", not table talk: only in-character and emotes get a tag.
+      via = { [styles.IC]: "ic", [styles.EMOTE]: "emote" }[message.style] ?? "chat";
+      text = plainText(message.content);
+    }
+    if ( !text ) return null;
+    const character = (message.style === styles.OOC)
+      ? (author.character?.name ?? author.name)
+      : (message.alias || author.character?.name || author.name);
+    return {
+      id: `chat-${message.id}`, userId: author.id, player: author.name, character, text, via,
+      whisper: whisper.length > 0, at: Date.now()
+    };
+  },
+
+  onCreate(message) {
+    if ( !queue.isOwner || (this.mode === "off") || this.familiarAnswers ) return;
+    const line = this.line(message);
+    if ( !line ) return;
+    queue.add(line);
+    if ( this.mode === "send" ) this.sendSoon();
+  },
+
+  /** Wait a moment so a message and the roll after it go together, then send only chat lines. */
+  sendSoon() {
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => {
+      if ( queue.sending ) return this.sendSoon();
+      queue.send({ only: l => l.id.startsWith("chat-"), quiet: true });
+    }, CHAT_SEND_DELAY_MS);
+  }
+};
 
 /* -------------------------------------------- */
 /*  Link to Claude Code (GM only)               */
@@ -547,6 +636,11 @@ const link = {
 /* -------------------------------------------- */
 /*  Panel                                       */
 /* -------------------------------------------- */
+
+/** How a line got into the queue, shown on the GM's list (spoken lines have no icon). */
+const VIA_ICONS = {
+  typed: "fa-keyboard", chat: "fa-comment", ic: "fa-comment", emote: "fa-comment", roll: "fa-dice-d20"
+};
 
 const panel = {
   el: null,
@@ -595,6 +689,7 @@ const panel = {
       <ol class="tt-mine" hidden></ol>
       <div class="tt-gm" hidden>
         <header class="tt-queue-head"><span class="tt-queue-title"></span></header>
+        <p class="tt-chat-note" hidden></p>
         <ol class="tt-queue"></ol>
         <button type="button" class="tt-send" data-action="send">
           <i class="fa-solid fa-paper-plane" inert></i><span class="tt-send-label"></span>
@@ -619,7 +714,7 @@ const panel = {
       const text = typeInput.value.replace(/\s+/g, " ").trim();
       if ( !text ) return;
       typeInput.value = "";
-      submitLine(text);
+      submitLine(text, "typed");
     });
     el.querySelector(".tt-mine").addEventListener("click", event => {
       const id = event.target.closest("[data-retract]")?.dataset.retract;
@@ -671,6 +766,9 @@ const panel = {
     dot.setAttribute("aria-label", dot.dataset.tooltip);
 
     this.el.querySelector(".tt-queue-title").textContent = `${loc("Queue")} (${queue.lines.length})`;
+    const chatNote = this.el.querySelector(".tt-chat-note");
+    chatNote.hidden = (chat.mode === "off") || !chat.familiarAnswers;
+    chatNote.textContent = loc("ChatFamiliarAnswers");
     const list = this.el.querySelector(".tt-queue");
     list.replaceChildren(...queue.lines.map(line => {
       const li = document.createElement("li");
@@ -679,6 +777,13 @@ const panel = {
         ? line.character : `${line.character} (${line.player})`;
       const text = document.createElement("span");
       text.textContent = line.text;
+      const icon = VIA_ICONS[line.via];
+      if ( icon ) {
+        const i = document.createElement("i");
+        i.className = `fa-solid ${icon} tt-via`;
+        i.dataset.tooltip = loc(`Via.${line.via}`);
+        who.prepend(i);
+      }
       const remove = document.createElement("button");
       remove.type = "button";
       remove.className = "tt-remove";
@@ -789,6 +894,20 @@ Hooks.once("init", () => {
     type: Boolean,
     default: true
   });
+  game.settings.register(ID, "chat", {
+    name: "TABLETALK.Settings.Chat.Name",
+    hint: "TABLETALK.Settings.Chat.Hint",
+    scope: "world",
+    config: true,
+    type: String,
+    choices: {
+      off: "TABLETALK.Settings.Chat.Off",
+      queue: "TABLETALK.Settings.Chat.Queue",
+      send: "TABLETALK.Settings.Chat.Send"
+    },
+    default: "queue",
+    onChange: () => panel.render()
+  });
 
   game.keybindings.register(ID, "talk", {
     name: "TABLETALK.Keys.Talk.Name",
@@ -812,6 +931,8 @@ Hooks.once("init", () => {
 
 Hooks.once("ready", () => {
   game.socket.on(SOCKET, onSocket);
+  Hooks.on("createChatMessage", message => chat.onCreate(message));
+  Hooks.on("familiar:tableChatEnabledChanged", () => panel.render());
   if ( queue.isOwner ) queue.restore();
   panel.create();
   if ( game.user.isGM ) link.start();

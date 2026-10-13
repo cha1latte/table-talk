@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Table Talk channel for Claude Code.
 //
-// Claude Code starts this file as an MCP server. It listens on 127.0.0.1 for batches of spoken
-// player lines sent by the Table Talk Foundry module (from the GM's browser) and pushes each batch
+// Claude Code starts this file as an MCP server. It listens on 127.0.0.1 for batches of player
+// lines (spoken, typed, Foundry chat and rolls) sent by the Table Talk Foundry module (from the GM's browser) and pushes each batch
 // into the running Claude Code session as a channel event. One-way: the AI GM answers through its
 // usual Familiar tools, not through this channel.
 //
@@ -14,7 +14,7 @@ import { appendFileSync, mkdirSync, readFileSync, statSync, writeFileSync } from
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-const VERSION = '0.1.2'
+const VERSION = '0.2.0'
 const STATE_DIR = join(homedir(), '.claude', 'channels', 'table-talk')
 const CONFIG_PATH = join(STATE_DIR, 'config.json')
 const LOG_PATH = join(STATE_DIR, 'debug.log')
@@ -45,8 +45,11 @@ const PORT = Number(process.env.TABLE_TALK_PORT || readConfig().port || 8796)
 // MCP over stdio
 
 const INSTRUCTIONS = [
-  'Spoken player lines from the Foundry VTT table arrive as <channel source="table-talk" lines="N" world="...">.',
-  'Each line is a voice transcript of what one player said out loud, labelled "Character (Player)".',
+  'Player lines from the Foundry VTT table arrive as <channel source="table-talk" lines="N" world="...">.',
+  'Each line is labelled "Character (Player)". A batch headed "Spoken at the table" is all voice transcripts of what players said out loud.',
+  'Otherwise each line carries a tag: [spoken] is a voice transcript; [typed] was typed to the GM; [chat], [chat, in character] and [emote]',
+  'were posted in Foundry chat (everyone at the table already saw them); [roll] is a roll the player already made in Foundry,',
+  'so use its result and do not roll it again; "whispered to the GM" means only the GM saw it, so keep your answer to it private.',
   'The GM collects lines and sends them together on purpose: treat the batch as the table\'s turn and answer it as the GM,',
   'using your Foundry/Familiar tools exactly as you would for typed player input, covering every line in one response.',
   'Transcripts can mishear names and words; read them charitably, and when you quote a player keep their wording.',
@@ -117,13 +120,27 @@ function oneLine(value, max) {
   return String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max)
 }
 
+const VIA = {
+  voice: 'spoken',
+  typed: 'typed',
+  chat: 'chat',
+  ic: 'chat, in character',
+  emote: 'emote',
+  roll: 'roll',
+}
+
 function formatBatch(lines) {
+  // All voice: the original format, so a batch reads the same as before chat lines existed.
+  const allVoice = lines.every(l => l.via === 'voice' && !l.whisper)
   const body = lines.map(l => {
     const who = l.player && l.player !== l.character ? `${l.character} (${l.player})` : l.character
-    return `${who}: "${l.text}"`
+    if (allVoice) return `${who}: "${l.text}"`
+    const tag = VIA[l.via] + (l.whisper ? ', whispered to the GM' : '')
+    return `${who} [${tag}]: "${l.text}"`
   })
   const count = lines.length === 1 ? '1 line' : `${lines.length} lines`
-  return `Spoken at the table (voice transcripts, ${count}):\n${body.join('\n')}`
+  if (allVoice) return `Spoken at the table (voice transcripts, ${count}):\n${body.join('\n')}`
+  return `From the table (${count}):\n${body.join('\n')}`
 }
 
 function cleanBatch(body) {
@@ -138,6 +155,9 @@ function cleanBatch(body) {
       character: oneLine(raw?.character, 80) || oneLine(raw?.player, 80) || 'Unknown player',
       player: oneLine(raw?.player, 80),
       text,
+      // Lines from module 0.1.x carry no "via": they were all spoken.
+      via: Object.hasOwn(VIA, raw?.via) ? raw.via : 'voice',
+      whisper: raw?.whisper === true,
     })
   }
   if (lines.length === 0) return { error: 'every line was empty' }

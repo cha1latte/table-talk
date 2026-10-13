@@ -21,7 +21,15 @@
     "ModelFailed": "The speech model couldn't load: {error}",
     "EngineError": "Speech-to-text stopped: {error}",
     "Queue": "Waiting to send",
-    "QueueEmpty": "Nothing yet. Lines appear here as players talk.",
+    "QueueEmpty": "Nothing yet. Lines appear here as players talk or chat.",
+    "ChatFamiliarAnswers": "Chat paused: Familiar's Table Chat answers it.",
+    "Via": {
+      "typed": "Typed in Table Talk",
+      "chat": "Foundry chat",
+      "ic": "Foundry chat, in character",
+      "emote": "Foundry chat, emote",
+      "roll": "Roll in Foundry"
+    },
     "Remove": "Remove this line",
     "Send": "Send to the AI GM",
     "SendKey": "({key})",
@@ -51,6 +59,13 @@
       "SpokenSend": {
         "Name": "\"OK GM, send it\"",
         "Hint": "Let the GM send the queue by saying \"OK GM, send it\" while holding the talk key."
+      },
+      "Chat": {
+        "Name": "Players' Foundry chat",
+        "Hint": "Players' chat messages, emotes, whispers to the GM and rolls can reach the AI GM too. Whispers between players, private rolls and the GM's own messages never do. Paused while Familiar's Table Chat is on.",
+        "Off": "Don't add it",
+        "Queue": "Add it to the queue (the GM sends it with everything else)",
+        "Send": "Send it straight away"
       }
     },
     "Keys": {

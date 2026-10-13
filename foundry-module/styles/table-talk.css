@@ -111,6 +111,13 @@
   border-bottom: 1px solid var(--tt-border);
 }
 #table-talk .tt-queue li strong { grid-column: 1; color: var(--tt-accent); }
+#table-talk .tt-queue li .tt-via { margin-right: 4px; color: var(--tt-muted); font-size: 0.9em; }
+
+#table-talk .tt-chat-note {
+  margin: 0 2px 4px;
+  color: var(--tt-muted);
+  font-size: var(--font-size-11, 11px);
+}
 #table-talk .tt-queue li span { grid-column: 1; overflow-wrap: anywhere; }
 #table-talk .tt-queue li .tt-remove {
   grid-column: 2;
