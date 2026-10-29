@@ -369,10 +369,36 @@ function handleEngineError(error) {
 /*  Lines and the GM's queue                    */
 /* -------------------------------------------- */
 
+/**
+ * REQ-002: who the GM may speak as. Pure: players' characters only (assigned to, or owned by, a
+ * non-GM user), each once, sorted by name. GM-only actors and NPCs stay out, so nothing spoils.
+ */
+function speakAsChoices(actors, users) {
+  const players = users.filter(u => !u.isGM);
+  const owner = CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER;
+  const picked = new Map();
+  for ( const actor of actors ) {
+    if ( actor.type !== "character" ) continue;
+    const theirs = players.some(u => (u.character?.id === actor.id) || ((actor.ownership?.[u.id] ?? 0) >= owner));
+    if ( theirs ) picked.set(actor.id, { id: actor.id, name: actor.name });
+  }
+  return [...picked.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** REQ-001/REQ-004: the GM's "Speak as" pick, kept per browser; anything no longer listed means GM. */
+const speakAs = {
+  choices: () => speakAsChoices(game.actors, game.users),
+  actor() {
+    if ( !game.user.isGM ) return null;
+    const id = game.settings.get(ID, "speakAs");
+    return id ? (this.choices().find(c => c.id === id) ?? null) : null;
+  }
+};
+
 /** @param {"voice"|"typed"} via  spoken while holding the key, or typed in the panel */
 function makeLine(text, via) {
   const user = game.user;
-  const character = user.isGM ? "GM" : (user.character?.name ?? user.name);
+  const character = user.isGM ? (speakAs.actor()?.name ?? "GM") : (user.character?.name ?? user.name);
   return { id: foundry.utils.randomID(), userId: user.id, player: user.name, character, text, via, at: Date.now() };
 }
 
@@ -684,6 +710,7 @@ const panel = {
         <input type="text" name="line" maxlength="2000" autocomplete="off">
         <button type="submit" class="tt-type-send"><i class="fa-solid fa-arrow-right" inert></i></button>
       </form>
+      <label class="tt-speak-as" hidden><span class="tt-speak-as-label"></span><select></select></label>
       <p class="tt-status" role="status" aria-live="polite"></p>
       <p class="tt-engine"></p>
       <ol class="tt-mine" hidden></ol>
@@ -716,6 +743,9 @@ const panel = {
       typeInput.value = "";
       submitLine(text, "typed");
     });
+    el.querySelector(".tt-speak-as select").addEventListener("change", event => {
+      game.settings.set(ID, "speakAs", event.target.value);
+    });
     el.querySelector(".tt-mine").addEventListener("click", event => {
       const id = event.target.closest("[data-retract]")?.dataset.retract;
       if ( !id ) return;
@@ -737,6 +767,30 @@ const panel = {
     this.render();
   },
 
+  /** REQ-001: GM-only dropdown, "GM" first, then players' characters. */
+  renderSpeakAs() {
+    if ( !this.el ) return;
+    const box = this.el.querySelector(".tt-speak-as");
+    box.hidden = !game.user.isGM;
+    if ( box.hidden ) return;
+    box.querySelector(".tt-speak-as-label").textContent = loc("SpeakAs");
+    const select = box.querySelector("select");
+    const current = speakAs.actor()?.id ?? "";
+    const list = [{ id: "", name: "GM" }, ...speakAs.choices()];
+    // Leave an open dropdown alone unless its choices actually changed.
+    const key = JSON.stringify([current, list]);
+    if ( key === this.speakAsKey ) return;
+    this.speakAsKey = key;
+    const options = list.map(({ id, name }) => {
+      const option = document.createElement("option");
+      option.value = id;
+      option.textContent = name;
+      option.selected = id === current;
+      return option;
+    });
+    select.replaceChildren(...options);
+  },
+
   /** Sit just above the players list, bottom left. */
   place() {
     const players = document.getElementById("players");
@@ -749,6 +803,7 @@ const panel = {
     if ( !this.el ) return;
     const key = talkKeyLabel();
     this.el.querySelector(".tt-talk-label").textContent = loc("HoldToTalk", { key });
+    this.renderSpeakAs();
     const gm = queue.isOwner;
     const gmBox = this.el.querySelector(".tt-gm");
     gmBox.hidden = !gm;
@@ -886,6 +941,14 @@ Hooks.once("init", () => {
     type: String,
     default: ""
   });
+  // REQ-004: remembered in this browser only; "" = speak as GM.
+  game.settings.register(ID, "speakAs", {
+    scope: "client",
+    config: false,
+    type: String,
+    default: "",
+    onChange: () => panel.render()
+  });
   game.settings.register(ID, "spokenSend", {
     name: "TABLETALK.Settings.SpokenSend.Name",
     hint: "TABLETALK.Settings.SpokenSend.Hint",
@@ -943,5 +1006,9 @@ Hooks.once("ready", () => {
     panel.render();
     panel.place();
   });
+  // REQ-002/REQ-004: keep the Speak-as list current as characters and players change.
+  for ( const hook of ["createActor", "updateActor", "deleteActor", "updateUser"] ) {
+    Hooks.on(hook, () => panel.renderSpeakAs());
+  }
   preloadWhisper();
 });

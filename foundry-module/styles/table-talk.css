@@ -163,3 +163,14 @@
 
 #table-talk .tt-engine { margin: 4px 2px 0; color: var(--tt-muted); font-size: var(--font-size-11, 11px); }
 #table-talk .tt-engine:empty { display: none; }
+
+/* GM-only "Speak as" picker (REQ-001) */
+#table-talk .tt-speak-as {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: var(--font-size-12, 12px);
+}
+#table-talk .tt-speak-as[hidden] { display: none; }
+#table-talk .tt-speak-as select { flex: 1; min-width: 0; height: 26px; }

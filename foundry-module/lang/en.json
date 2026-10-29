@@ -80,6 +80,7 @@
     },
     "TypePlaceholder": "Or type to the GM, then Enter",
     "TypeSend": "Add to the GM's queue",
+    "SpeakAs": "Speak as",
     "Retract": "Take this line back",
     "EngineBrowser": "Speech: browser's own recognition",
     "EngineWhisperLoading": "Speech: Whisper, downloading the model ({pct}%)… one time only",
