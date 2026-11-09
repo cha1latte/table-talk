@@ -60,6 +60,10 @@
         "Name": "\"OK GM, send it\"",
         "Hint": "Let the GM send the queue by saying \"OK GM, send it\" while holding the talk key."
       },
+      "PlayersSend": {
+        "Name": "Players can send",
+        "Hint": "Players get their own Send button (and Shift+G, and \"OK GM, send it\") that sends the whole queue, the same as the GM's Send. Handy when you are the only player and play from another device. The GM's window must stay open: it is the one that talks to Claude Code."
+      },
       "Chat": {
         "Name": "Players' Foundry chat",
         "Hint": "Players' chat messages, emotes, whispers to the GM and rolls can reach the AI GM too. Whispers between players, private rolls and the GM's own messages never do. Paused while Familiar's Table Chat is on.",
@@ -74,13 +78,14 @@
         "Hint": "Hold while you speak; let go when you're done. Your words go to the GM's queue."
       },
       "Send": {
-        "Name": "Send the queue (GM)",
-        "Hint": "Sends every waiting line to the Claude Code game master."
+        "Name": "Send the queue",
+        "Hint": "Sends every waiting line to the Claude Code game master. Players can use it only while the GM has turned on \"Players can send\"."
       }
     },
     "TypePlaceholder": "Or type to the GM, then Enter",
     "TypeSend": "Add to the GM's queue",
     "SpeakAs": "Speak as",
+    "PlayersSendOff": "The GM hasn't turned on \"Players can send\".",
     "Retract": "Take this line back",
     "EngineBrowser": "Speech: browser's own recognition",
     "EngineWhisperLoading": "Speech: Whisper, downloading the model ({pct}%)… one time only",

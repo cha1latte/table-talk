@@ -31,7 +31,8 @@
 }
 
 #table-talk .tt-talk,
-#table-talk .tt-send {
+#table-talk .tt-send,
+#table-talk .tt-player-send {
   flex: 1;
   display: flex;
   align-items: center;
@@ -81,7 +82,7 @@
 #table-talk .tt-status[data-kind="warn"] { color: var(--tt-accent); }
 #table-talk .tt-status[data-kind="error"] { color: #ff8a8a; }
 
-#table-talk .tt-send { width: 100%; }
+#table-talk .tt-send, #table-talk .tt-player-send { width: 100%; }
 
 #table-talk .tt-gm {
   margin-top: 8px;
@@ -174,3 +175,4 @@
 }
 #table-talk .tt-speak-as[hidden] { display: none; }
 #table-talk .tt-speak-as select { flex: 1; min-width: 0; height: 26px; }
+#table-talk .tt-player-send[hidden] { display: none; }

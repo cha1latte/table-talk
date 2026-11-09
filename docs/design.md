@@ -18,3 +18,7 @@ Live test in the throwaway Foundry (qa/foundry.ps1, :30005, never :30000): GM se
 - `npm test`
 - `powershell -File qa\foundry.ps1` then `node qa/test-speak-as.mjs` and `node qa/test-type.mjs`
 - `npm run package`
+
+## DEC-101 Players ask the GM's window to send (REQ-101..103)
+Options: (a) the player's browser posts to Claude Code itself; (b) the player asks the active GM's window over the module socket and that window runs its normal Send.
+Chose (b): the channel listens on the GM PC's localhost, which a laptop can't reach without opening it to the network, and (b) reuses the one tested send path. The GM window checks the world setting itself, so a hand-made socket message can't get around it. The result goes back to the asker as `send-result`.

@@ -403,7 +403,10 @@ function makeLine(text, via) {
 }
 
 function submitLine(text, via) {
-  if ( game.user.isGM && (via === "voice") && SEND_PHRASE.test(text) && game.settings.get(ID, "spokenSend") ) return queue.send();
+  if ( (via === "voice") && SEND_PHRASE.test(text) && game.settings.get(ID, "spokenSend") ) {
+    if ( game.user.isGM ) return queue.send();
+    if ( playersCanSend() ) return requestSend();
+  }
   const line = makeLine(text, via);
   if ( queue.isOwner ) {
     queue.add(line);
@@ -414,6 +417,20 @@ function submitLine(text, via) {
   talk.lastLineId = line.id;
   game.socket.emit(SOCKET, { type: "line", line });
   panel.status(loc("Queued", { text }), "ok");
+}
+
+/** REQ-101: the GM lets players send the table's turn themselves. */
+function playersCanSend() {
+  return game.settings.get(ID, "playersSend");
+}
+
+/** REQ-102: a player asks the active GM's client to send the queue, exactly as the GM's Send would. */
+function requestSend() {
+  if ( queue.isOwner ) return queue.send();
+  if ( !playersCanSend() ) return;
+  if ( !game.users.activeGM ) return panel.status(loc("NoGM"), "error");
+  panel.status(loc("Sending"), "ok");
+  game.socket.emit(SOCKET, { type: "send" });
 }
 
 const queue = {
@@ -472,9 +489,14 @@ const queue = {
    *  @param {(line: object) => boolean} [options.only]  send just these lines (the rest keep waiting)
    *  @param {boolean} [options.quiet]                    say nothing when there is nothing to send */
   async send({ only = () => true, quiet = false } = {}) {
-    if ( !this.isOwner || this.sending ) return;
+    const report = (text, kind) => {
+      panel.status(text, kind);
+      return { text, kind };
+    };
+    if ( !this.isOwner ) return;
+    if ( this.sending ) return { text: loc("Sending"), kind: "ok" };
     const batch = this.lines.filter(only);
-    if ( !batch.length ) return quiet ? undefined : panel.status(loc("NothingToSend"), "warn");
+    if ( !batch.length ) return quiet ? undefined : report(loc("NothingToSend"), "warn");
     this.sending = true;
     panel.sending(true);
     try {
@@ -494,12 +516,12 @@ const queue = {
       // "sent" goes out before the new queue, so players read it as sent, not as removed.
       game.socket.emit(SOCKET, { type: "sent", count: batch.length, userIds: [...new Set(batch.map(l => l.userId))] });
       this.changed();
-      panel.status(loc("Sent", { count: batch.length }), "ok");
       link.set("ok");
+      return report(loc("Sent", { count: batch.length }), "ok");
     } catch (err) {
       const unreachable = err instanceof TypeError;
       if ( unreachable ) link.set("down");
-      panel.status(unreachable ? loc("NotLinked", { url: channelUrl() }) : loc("SendFailed", { error: err.message }), "error");
+      return report(unreachable ? loc("NotLinked", { url: channelUrl() }) : loc("SendFailed", { error: err.message }), "error");
     } finally {
       this.sending = false;
       panel.sending(false);
@@ -539,6 +561,26 @@ function onSocket(message, senderId) {
         panel.mine([]);
         panel.waiting(0);
         panel.status(loc("SentToGM"), "ok");
+      }
+      break;
+    case "send": {
+      // REQ-102/REQ-103: only when the GM allows it; the reply goes back to whoever asked.
+      if ( !queue.isOwner ) break;
+      const from = game.users.get(senderId);
+      if ( !from ) break;
+      const reply = result => game.socket.emit(SOCKET, { type: "send-result", to: from.id, ...result });
+      if ( !playersCanSend() ) {
+        reply({ text: loc("PlayersSendOff"), kind: "error" });
+        break;
+      }
+      queue.send().then(result => result && reply(result));
+      break;
+    }
+    case "send-result":
+      if ( (message.to === game.user.id) && !queue.isOwner ) {
+        // The GM's own wording is for the GM; a player only needs to know if it went.
+        const text = message.kind === "ok" ? loc("SentToGM") : message.text;
+        panel.status(text, message.kind);
       }
       break;
     case "hello":
@@ -714,6 +756,9 @@ const panel = {
       <p class="tt-status" role="status" aria-live="polite"></p>
       <p class="tt-engine"></p>
       <ol class="tt-mine" hidden></ol>
+      <button type="button" class="tt-player-send" hidden>
+        <i class="fa-solid fa-paper-plane" inert></i><span class="tt-player-send-label"></span>
+      </button>
       <div class="tt-gm" hidden>
         <header class="tt-queue-head"><span class="tt-queue-title"></span></header>
         <p class="tt-chat-note" hidden></p>
@@ -732,6 +777,7 @@ const panel = {
       talkButton.addEventListener(type, () => stopTalking());
     }
     el.querySelector(".tt-send").addEventListener("click", () => queue.send());
+    el.querySelector(".tt-player-send").addEventListener("click", () => requestSend());
     const typeForm = el.querySelector(".tt-type");
     const typeInput = typeForm.querySelector("input");
     typeInput.placeholder = loc("TypePlaceholder");
@@ -809,6 +855,11 @@ const panel = {
     gmBox.hidden = !gm;
     const dot = this.el.querySelector(".tt-link");
     dot.hidden = !gm;
+    // REQ-101: players get their own Send button only while the GM allows it.
+    const playerSend = this.el.querySelector(".tt-player-send");
+    playerSend.hidden = gm || !playersCanSend();
+    playerSend.querySelector(".tt-player-send-label").textContent = loc("Send");
+    playerSend.disabled = !this.waitingCount;
     if ( !gm ) return;
 
     dot.dataset.state = link.state;
@@ -887,6 +938,8 @@ const panel = {
 
   waiting(count) {
     this.waitingCount = count;
+    const playerSend = this.el?.querySelector(".tt-player-send");
+    if ( playerSend ) playerSend.disabled = !count;
     if ( !this.el || talk.active || talk.busy ) return;
     const p = this.el.querySelector(".tt-status");
     if ( count ) {
@@ -957,6 +1010,16 @@ Hooks.once("init", () => {
     type: Boolean,
     default: true
   });
+  // REQ-101: off by default; only the GM can turn it on.
+  game.settings.register(ID, "playersSend", {
+    name: "TABLETALK.Settings.PlayersSend.Name",
+    hint: "TABLETALK.Settings.PlayersSend.Hint",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: false,
+    onChange: () => panel.render()
+  });
   game.settings.register(ID, "chat", {
     name: "TABLETALK.Settings.Chat.Name",
     hint: "TABLETALK.Settings.Chat.Hint",
@@ -985,9 +1048,14 @@ Hooks.once("init", () => {
     name: "TABLETALK.Keys.Send.Name",
     hint: "TABLETALK.Keys.Send.Hint",
     editable: [{ key: "KeyG", modifiers: ["Shift"] }],
-    restricted: true,
     repeat: false,
-    onDown: () => { queue.send(); return true; },
+    // REQ-102: players may use it too, but only while the GM allows it.
+    onDown: () => {
+      if ( queue.isOwner ) queue.send();
+      else if ( playersCanSend() ) requestSend();
+      else return false;
+      return true;
+    },
     precedence: CONST.KEYBINDING_PRECEDENCE.NORMAL
   });
 });

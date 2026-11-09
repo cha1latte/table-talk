@@ -14,7 +14,7 @@ import { appendFileSync, mkdirSync, readFileSync, statSync, writeFileSync } from
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-const VERSION = '0.2.0'
+const VERSION = '0.3.0'
 const STATE_DIR = join(homedir(), '.claude', 'channels', 'table-talk')
 const CONFIG_PATH = join(STATE_DIR, 'config.json')
 const LOG_PATH = join(STATE_DIR, 'debug.log')

@@ -31,3 +31,29 @@ The pick must persist across reloads in that browser (client-scope setting).
 
 ## Open questions
 None.
+
+---
+
+# Requirements: "Players can send" (2026-10-29)
+
+Context: a solo player keeps the GM window open on the main PC (it holds the queue and the link to Claude Code) but plays from a laptop logged in as their player. They need to send the table's turn from the laptop.
+
+## REQ-101 A GM-only world setting turns it on
+A world setting "Players can send", off by default, must give players a Send button in their panel while it is on.
+- Given the setting is off, then players see no Send button.
+- Given a player, when they try to change the setting, then it does not change.
+- Given the setting is on, then players see a Send button and the GM's panel is unchanged.
+
+## REQ-102 A player's Send works like the GM's
+While on, a player's Send button, Shift+G, or spoken "OK GM, send it" (when that setting is on) must make the active GM's window send the whole queue, exactly as the GM's Send.
+- Given lines from the GM and players are waiting, when the player clicks Send, then one batch with every waiting line reaches Claude Code and the queue empties.
+- Given nothing is waiting, then the player's Send button is greyed out.
+
+## REQ-103 Refusals and failures reach the player
+- Given the setting is off, when a player's client asks the GM to send anyway, then nothing is sent and the player is told why.
+- Given Claude Code is unreachable, when the player sends, then the lines stay queued and the player sees the reason.
+- Given no GM is connected, then the player is told so.
+
+## Non-goals
+- Sending without the GM's window open (the GM's browser is what talks to Claude Code).
+- Per-player permissions.
